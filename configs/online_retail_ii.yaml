@@ -1,0 +1,50 @@
+dataset:
+  name: "online_retail_ii"
+  source_url: "https://archive.ics.uci.edu/ml/machine-learning-databases/00502/online_retail_II.xlsx"
+  local_path: "data/online_retail_II.xlsx"
+  file_type: "excel"
+  sheet_name: "Year 2009-2010"
+
+schema:
+  customer_id: "Customer ID"
+  invoice_id: "Invoice"
+  invoice_date: "InvoiceDate"
+  quantity: "Quantity"
+  unit_price: "Price"
+  country: "Country"
+
+cleaning:
+  drop_missing_customer_id: true
+  drop_negative_quantity: true
+  drop_zero_price: true
+  drop_duplicates: true
+  outlier_method: "iqr"
+  outlier_columns: ["Quantity", "Price"]
+
+features:
+  snapshot_dates:
+    train: "2010-12-01"
+    val: "2011-06-01"
+    test: "2011-12-01"
+  churn_window_days: 90
+  clv_window_days: 90
+  rolling_windows: [30, 60, 90]
+  use_log_transform: true
+  scaler: "standard"
+
+modeling:
+  target: "churn"  # or "clv"
+  test_size: 0.2
+  cv_folds: 5
+  use_smote: true
+  models:
+    - "xgboost"
+    - "lightgbm"
+  hyperparameter_tuning:
+    n_trials: 50
+    timeout: 600
+
+output:
+  model_dir: "models/"
+  figures_dir: "outputs/figures/"
+  tables_dir: "outputs/tables/"
