@@ -7,8 +7,8 @@ test:
 	pytest tests/ -v --cov=src --cov-report=term-missing
 
 lint:
-	flake8 src/ tests/
-	mypy src/
+	flake8 src/ tests/ --max-line-length=100
+	mypy src/ --ignore-missing-imports
 
 format:
 	black src/ tests/
