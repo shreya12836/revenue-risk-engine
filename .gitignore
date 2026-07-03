@@ -1,13 +1,16 @@
-# Data
-data/
+# Data — anchored to repo root so src/data/ stays tracked.
+/data/
 *.csv
 *.xlsx
 *.parquet
 
-# Models
-models/
+# Models — anchored to repo root so src/models/ stays tracked.
+/models/
 *.pkl
 *.joblib
+
+# Experiment outputs (timestamped run folders per roadmap §6)
+/outputs/
 
 # Python
 __pycache__/

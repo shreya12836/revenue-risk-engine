@@ -23,8 +23,8 @@ cleaning:
 
 features:
   snapshot_dates:
-    train: "2010-12-01"
-    val: "2011-06-01"
+    train: "2010-06-01"
+    val: "2010-12-01"
     test: "2011-12-01"
   churn_window_days: 90
   clv_window_days: 90
@@ -39,7 +39,6 @@ modeling:
   use_smote: true
   models:
     - "xgboost"
-    - "lightgbm"
   hyperparameter_tuning:
     n_trials: 50
     timeout: 600
