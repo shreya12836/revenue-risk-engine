@@ -26,6 +26,7 @@ setup(
         "httpx>=0.25",
         "matplotlib>=3.8",
         "seaborn>=0.13",
+        "openpyxl>=3.1",
     ],
     extras_require={
         "dev": [
