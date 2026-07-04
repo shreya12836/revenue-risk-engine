@@ -63,7 +63,7 @@ The default project config lives at `configs/online_retail_ii.yaml`. It defines:
 1. ~~Stabilize scaffold with tests, docs, and lint-clean utilities.~~ ✅
 2. ~~Add config-driven data loading and cleaning.~~ ✅
 3. ~~Build customer feature generation and labels.~~ ✅
-4. Add baseline churn model training and evaluation.
+4. ~~Add baseline churn model training and evaluation.~~ ✅
 5. Save inference artifacts and expose a FastAPI prediction endpoint.
 6. Add dashboard views for customer risk and revenue exposure.
 
@@ -104,3 +104,55 @@ toward "everyone churned." `assert_sufficient_future_window` now raises the
 moment a config change would do that again.
 
 Run the smoke test to reproduce: `python scripts/smoke_features.py`
+
+## Modeling (Day 4)
+
+Two churn classifiers are trained per run and compared on the same
+time-aware validation split — a simple baseline before any boosted model,
+per the project roadmap:
+
+| Model | Preprocessing | Imbalance handling |
+|-------|---------------|---------------------|
+| Logistic Regression (baseline) | Median imputation + standard scaling, fit on train only | SMOTE, applied to the training fold only |
+| XGBoost | None — raw features, `NaN` handled natively via learned split defaults | `scale_pos_weight` |
+
+Both the imputer and scaler are fit exclusively on the training split and
+reused (never refit) on validation/test data — the same fit-on-train,
+apply-everywhere discipline used by `remove_outliers` in the cleaning
+layer. XGBoost never sees imputed or SMOTE-resampled data: SMOTE requires
+complete numeric input, which would erase the missingness signal the
+model can otherwise learn from directly.
+
+**Validation metrics** (train snapshot 2010-06-01, val snapshot
+2010-12-01, `churn_window_days=90`):
+
+| Metric | Logistic Regression | XGBoost |
+|--------|---------------------|---------|
+| ROC-AUC | 0.780 | 0.755 |
+| PR-AUC | 0.859 | 0.830 |
+| Precision | 0.854 | 0.828 |
+| Recall | 0.637 | 0.640 |
+| F1 | 0.730 | 0.722 |
+| Brier score | 0.238 | 0.223 |
+| Lift @ top 10% | 1.36x | 1.27x |
+| Revenue-at-risk (val total) | $268,920 | $340,356 |
+
+Revenue-at-risk is `churn_probability x spend_90d` — trailing 90-day
+spend, the same window length as the churn label but looking backward
+instead of forward, so it is a value actually known at scoring time. Using
+the *future* revenue label here would be leakage-adjacent and impossible
+to reproduce for a live customer.
+
+XGBoost defaults underperform logistic regression on this dataset
+(PR-AUC 0.830 vs 0.859, ROC-AUC 0.755 vs 0.780). This is expected: with
+only ~2,600 training rows and 33 features, tree-based models need tuning
+to beat a well-regularized linear baseline. Hyperparameter optimization
+(Optuna) is deferred to v2 per the roadmap — this comparison is the
+honest pre-tuning starting point, not a final result, and is exactly what
+tuning will be measured against.
+
+**Artifacts saved per run** to `outputs/<UTC-timestamp>/`: both fitted
+models (`.joblib`), `metrics.json`, `params.json`, `feature_names.json`,
+and ROC / precision-recall / calibration-curve plots per model.
+
+Run the smoke test to reproduce: `python scripts/smoke_train.py`
