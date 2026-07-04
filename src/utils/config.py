@@ -22,7 +22,10 @@ class DatasetConfig(BaseModel):
     source_url: str
     local_path: str
     file_type: Literal["excel", "csv", "parquet"]
-    sheet_name: str | None = None
+    # For Excel sources: ``None`` reads *all* sheets and concatenates them
+    # (the common case for multi-period datasets like Online Retail II);
+    # a string reads one sheet by name; a list of strings reads those sheets.
+    sheet_name: str | list[str] | None = None
 
 
 class SchemaConfig(BaseModel):
@@ -94,14 +97,15 @@ class OutputConfig(BaseModel):
 
 
 class ProjectConfig(BaseModel):
-    # ``populate_by_name`` lets us alias the YAML key ``schema`` without losing
-    # the ergonomic ``config.schema`` attribute access. ``protected_namespaces``
-    # silences the (otherwise harmless) Pydantic v2 warning that "schema"
-    # shadows ``BaseModel.schema``.
-    model_config = ConfigDict(populate_by_name=True, protected_namespaces=())
+    # ``protected_namespaces`` silences the harmless Pydantic v2 warning that
+    # would otherwise trigger from any model-prefixed attribute. We name the
+    # dataset-schema field ``dataset_schema`` (not ``schema``) because the
+    # latter would shadow :py:meth:`pydantic.BaseModel.schema` and break any
+    # caller that tries to dump JSON Schema from the config.
+    model_config = ConfigDict(protected_namespaces=())
 
     dataset: DatasetConfig
-    schema: SchemaConfig = Field(alias="schema")
+    dataset_schema: SchemaConfig
     cleaning: CleaningConfig
     features: FeaturesConfig
     modeling: ModelingConfig

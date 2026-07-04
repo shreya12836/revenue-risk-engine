@@ -16,7 +16,7 @@ def test_load_default_config_returns_project_config():
 
     assert isinstance(config, ProjectConfig)
     assert config.dataset.name == "online_retail_ii"
-    assert config.schema.customer_id == "Customer ID"
+    assert config.dataset_schema.customer_id == "Customer ID"
     assert config.modeling.target == "churn"
 
 

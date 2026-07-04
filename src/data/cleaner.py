@@ -125,7 +125,7 @@ def clean(df: pd.DataFrame, config: ProjectConfig) -> pd.DataFrame:
     4. Remove zero / negative prices.
     5. Remove numeric outliers.
     """
-    schema = config.schema
+    schema = config.dataset_schema
     cleaning = config.cleaning
 
     cleaned = df.copy()

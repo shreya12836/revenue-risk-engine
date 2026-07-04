@@ -3,9 +3,12 @@ dataset:
   source_url: "https://archive.ics.uci.edu/ml/machine-learning-databases/00502/online_retail_II.xlsx"
   local_path: "data/online_retail_II.xlsx"
   file_type: "excel"
-  sheet_name: "Year 2009-2010"
+  # ``null`` → load *every* sheet and concatenate. Online Retail II ships
+  # with two sheets ("Year 2009-2010" and "Year 2010-2011"); loading just
+  # one truncates the post-snapshot label window for the val/test splits.
+  sheet_name: null
 
-schema:
+dataset_schema:
   customer_id: "Customer ID"
   invoice_id: "Invoice"
   invoice_date: "InvoiceDate"

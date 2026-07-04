@@ -264,9 +264,9 @@ class TestLoad:
         df = load(config)
 
         assert len(df) == 2
-        assert pd.api.types.is_datetime64_any_dtype(df[config.schema.invoice_date])
-        assert pd.api.types.is_numeric_dtype(df[config.schema.quantity])
-        assert pd.api.types.is_numeric_dtype(df[config.schema.unit_price])
+        assert pd.api.types.is_datetime64_any_dtype(df[config.dataset_schema.invoice_date])
+        assert pd.api.types.is_numeric_dtype(df[config.dataset_schema.quantity])
+        assert pd.api.types.is_numeric_dtype(df[config.dataset_schema.unit_price])
 
     def test_load_rejects_missing_required_columns(self, tmp_path, config):
         path = self._write_csv(
@@ -291,4 +291,4 @@ class TestLoad:
         config.dataset.local_path = str(path)
 
         df = load(config)
-        assert df[config.schema.invoice_date].isna().all()
+        assert df[config.dataset_schema.invoice_date].isna().all()

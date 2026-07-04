@@ -42,9 +42,23 @@ def download_if_missing(url: str, local_path: str | Path) -> Path:
 # Read
 # ---------------------------------------------------------------------------
 
-def _read_file(path: Path, file_type: str, sheet_name: str | None) -> pd.DataFrame:
+def _read_file(
+    path: Path,
+    file_type: str,
+    sheet_name: str | list[str] | None,
+) -> pd.DataFrame:
     if file_type == "excel":
-        return pd.read_excel(path, sheet_name=sheet_name)
+        # ``sheet_name=None`` reads every sheet and returns a dict; the
+        # branch below flattens it. A list of names reads those sheets
+        # and likewise returns a dict. A single string reads one sheet
+        # and returns a DataFrame directly.
+        result = pd.read_excel(path, sheet_name=sheet_name)
+        if isinstance(result, dict):
+            frames = list(result.values())
+            if not frames:
+                return pd.DataFrame()
+            return pd.concat(frames, ignore_index=True)
+        return result
     if file_type == "csv":
         return pd.read_csv(path)
     if file_type == "parquet":
@@ -53,7 +67,7 @@ def _read_file(path: Path, file_type: str, sheet_name: str | None) -> pd.DataFra
 
 
 def _required_columns(config: ProjectConfig) -> list[str]:
-    schema = config.schema
+    schema = config.dataset_schema
     return [
         schema.customer_id,
         schema.invoice_id,
@@ -71,7 +85,7 @@ def load(config: ProjectConfig) -> pd.DataFrame:
     reference them through :class:`utils.config.SchemaConfig`.
     """
     dataset = config.dataset
-    schema = config.schema
+    schema = config.dataset_schema
 
     local_path = download_if_missing(dataset.source_url, dataset.local_path)
     df = _read_file(local_path, dataset.file_type, dataset.sheet_name)
