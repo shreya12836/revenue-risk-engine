@@ -4,20 +4,20 @@
 
 Build a recruiter-facing, production-oriented ML system that predicts customer churn and estimates revenue-at-risk from transaction history.
 
-Current phase: **Foundation, Day 1**
+Current phase: **Day 3 — Feature Engineering complete, Modeling next**
 
 The MVP should prove strong ML judgment first: leakage-safe features, clean tests, baseline comparison, business metrics, saved artifacts, API inference, and a dashboard that reads persisted results.
 
 ## MVP Build Plan
 
-### 1. Foundation
+### 1. Foundation ✅ done
 
 - Set up a clean project structure, CI, linting, tests, and configuration.
 - Use YAML config validated through Pydantic.
 - Use structured logging instead of print statements.
 - Keep the README professional and portfolio-facing, with no tutorial-style framing.
 
-### 2. Data Layer
+### 2. Data Layer ✅ done
 
 - Implement a data loader with dtype validation and safe conversion.
 - Test required columns, invalid dtypes, missing files, and successful loading.
@@ -30,7 +30,7 @@ The MVP should prove strong ML judgment first: leakage-safe features, clean test
 - Orchestrate cleaning through `clean()`.
 - Document how cancellations and returns are handled.
 
-### 3. Feature Engineering
+### 3. Feature Engineering ✅ done
 
 - Build leakage-safe, time-aware feature generation.
 - Generate features only from data available before each snapshot date.
@@ -44,7 +44,13 @@ The MVP should prove strong ML judgment first: leakage-safe features, clean test
   - `merge_features`
   - `build_features`
 
-### 4. Modeling
+Implemented in `src/features/` (`rfm.py`, `rolling.py`, `customer_stats.py`,
+`trend.py`, `labels.py`, `builder.py`, `splits.py`, `invariants.py`), with
+48 passing tests in `tests/test_features.py` including a dedicated
+`TestLeakageIsImpossible` check. Verified against the real dataset via
+`python scripts/smoke_features.py`.
+
+### 4. Modeling — next up
 
 - Train a simple baseline before any boosted model.
 - Train one boosted model for MVP, preferably XGBoost.
