@@ -24,6 +24,8 @@ setup(
         "imbalanced-learn>=0.11",
         "optuna>=3.4",
         "httpx>=0.25",
+        "matplotlib>=3.8",
+        "seaborn>=0.13",
     ],
     extras_require={
         "dev": [
