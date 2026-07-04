@@ -10,6 +10,7 @@ import pandas as pd
 
 from features.invariants import (
     assert_required_columns,
+    assert_sufficient_future_window,
     revenue_column,
 )
 
@@ -85,6 +86,11 @@ def build_labels(
 
     if len(customers) == 0:
         return pd.DataFrame(columns=["customer_id", "churn", "clv"])
+
+    # Only guard once we know there's a population to label — an empty
+    # pre-snapshot population makes the window question moot.
+    assert_sufficient_future_window(work, snapshot, churn_window_days, date_column="invoice_date")
+    assert_sufficient_future_window(work, snapshot, clv_window_days, date_column="invoice_date")
 
     in_churn_window = work[
         (work["invoice_date"] > snapshot) & (work["invoice_date"] <= churn_upper)

@@ -7,11 +7,13 @@ the order documented in the project roadmap (Section 4, Day 2).
 
 Cancellations and returns
 -------------------------
-The Online Retail II stream records cancellations as invoices starting with
-``C`` and as negative quantities. We remove these rows at cleaning time
-rather than netting them against the original purchase. Netting would let a
-late-recorded cancellation silently "undo" a purchase in our rolling
-aggregates, which is a classic source of feature leakage in churn models.
+The Online Retail II stream records cancellations as negative quantities
+(the accompanying "C"-prefixed invoice id is not itself checked here — the
+quantity sign is the actual filter condition). We remove these rows at
+cleaning time rather than netting them against the original purchase.
+Netting would let a late-recorded cancellation silently "undo" a purchase
+in our rolling aggregates, which is a classic source of feature leakage in
+churn models.
 """
 from __future__ import annotations
 
@@ -69,16 +71,26 @@ def remove_outliers(
     method: str = "iqr",
     iqr_factor: float = 1.5,
     zscore_threshold: float = 3.0,
+    fit_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Remove outliers from numeric columns.
 
     - ``iqr``: keep rows within ``[Q1 - k*IQR, Q3 + k*IQR]`` (NaNs are kept).
-    - ``zscore``: keep rows with ``|z| <= threshold`` (NaNs are kept).
+    - ``zscore``: keep rows with ``|z| <= threshold`` (NaNs are kept). Uses
+      the raw mean/std, so a large contamination fraction can swamp its own
+      detector — fine for occasional extreme values, not a robust estimator.
     - ``none``: pass-through.
+
+    ``fit_df``, if given, is used to compute the thresholds instead of
+    ``df`` itself, while the resulting mask is still applied to all of
+    ``df``. Pass the pre-training-snapshot slice here so outlier bounds
+    don't get informed by data the model wouldn't have at training time —
+    the same leakage risk as fitting a scaler on the full dataset.
     """
     if method == "none" or not columns:
         return df.reset_index(drop=True)
 
+    stats_source = df if fit_df is None else fit_df
     before = len(df)
     mask = pd.Series(True, index=df.index)
 
@@ -86,18 +98,22 @@ def remove_outliers(
         if col not in df.columns:
             logger.warning("Outlier column not present, skipping: %s", col)
             continue
+        if col not in stats_source.columns:
+            logger.warning("Outlier fit column not present, skipping: %s", col)
+            continue
 
+        fit_values = stats_source[col]
         col_values = df[col]
         if method == "iqr":
-            q1 = col_values.quantile(0.25)
-            q3 = col_values.quantile(0.75)
+            q1 = fit_values.quantile(0.25)
+            q3 = fit_values.quantile(0.75)
             iqr = q3 - q1
             lower = q1 - iqr_factor * iqr
             upper = q3 + iqr_factor * iqr
             mask &= col_values.between(lower, upper) | col_values.isna()
         elif method == "zscore":
-            mean = col_values.mean()
-            std = col_values.std()
+            mean = fit_values.mean()
+            std = fit_values.std()
             if std == 0 or pd.isna(std):
                 continue
             z = (col_values - mean) / std
@@ -124,6 +140,13 @@ def clean(df: pd.DataFrame, config: ProjectConfig) -> pd.DataFrame:
     3. Remove negative quantities (cancellations).
     4. Remove zero / negative prices.
     5. Remove numeric outliers.
+
+    Outlier thresholds are fit on transactions up to the training
+    snapshot only (``config.features.snapshot_dates["train"]``), then
+    applied to every row. Fitting on the full dataset would let the
+    distribution of not-yet-available val/test transactions decide what
+    counts as an outlier in the training window — the same leakage class
+    the feature layer's ``assert_no_future_transactions`` guards against.
     """
     schema = config.dataset_schema
     cleaning = config.cleaning
@@ -139,11 +162,15 @@ def clean(df: pd.DataFrame, config: ProjectConfig) -> pd.DataFrame:
     if cleaning.drop_zero_price:
         cleaned = remove_zero_price(cleaned, schema.unit_price)
 
-    cleaned = remove_outliers(
-        cleaned,
-        columns=cleaning.outlier_columns,
-        method=cleaning.outlier_method,
-    )
+    if cleaning.outlier_method != "none":
+        train_snapshot = pd.Timestamp(config.features.snapshot_dates["train"])
+        fit_df = cleaned[cleaned[schema.invoice_date] <= train_snapshot]
+        cleaned = remove_outliers(
+            cleaned,
+            columns=cleaning.outlier_columns,
+            method=cleaning.outlier_method,
+            fit_df=fit_df,
+        )
 
     logger.info(
         "clean pipeline: %s -> %s rows", f"{len(df):,}", f"{len(cleaned):,}"

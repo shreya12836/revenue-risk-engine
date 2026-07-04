@@ -136,9 +136,29 @@ class TestRemoveOutliers:
             remove_outliers(df, ["x"], method="bogus")
 
     def test_missing_column_warns_and_skips(self, caplog):
+        # data.cleaner's logger has propagate=False (see utils/logger.py),
+        # so caplog must attach directly to it, not to the root logger.
         df = pd.DataFrame({"x": [1, 2, 3]})
-        cleaned = remove_outliers(df, ["does_not_exist"], method="iqr")
+        with caplog.at_level("WARNING", logger="data.cleaner"):
+            cleaned = remove_outliers(df, ["does_not_exist"], method="iqr")
         assert len(cleaned) == 3
+        assert "does_not_exist" in caplog.text
+
+    def test_fit_df_restricts_threshold_computation_to_subset(self):
+        # Rows 5-7 are a cluster of extreme values that would blow out the
+        # IQR bounds (swamping) if they were allowed to influence the fit.
+        # Fitting on the well-behaved subset alone still catches them.
+        df = pd.DataFrame({"x": [1, 2, 3, 4, 5, 500, 550, 600]})
+        fit_df = df.iloc[:5]
+        cleaned = remove_outliers(df, ["x"], method="iqr", fit_df=fit_df)
+        assert cleaned["x"].tolist() == [1, 2, 3, 4, 5]
+
+    def test_without_fit_df_the_same_cluster_survives(self):
+        # Contrast case: fitting on the full contaminated column lets the
+        # cluster of extreme values mask itself.
+        df = pd.DataFrame({"x": [1, 2, 3, 4, 5, 500, 550, 600]})
+        cleaned = remove_outliers(df, ["x"], method="iqr")
+        assert 500 in cleaned["x"].values
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +213,26 @@ class TestClean:
         _ = clean(raw_df, config)
         assert len(raw_df) == original_len
 
+    def test_outlier_bounds_are_fit_only_on_pre_train_snapshot_data(self, config):
+        # config's train snapshot is 2010-06-01. Rows after it (2011+) carry
+        # extreme quantities; if they were allowed to influence the outlier
+        # fit, they could swamp their own detector. Bounds must come only
+        # from the tame pre-snapshot rows.
+        df = pd.DataFrame({
+            "Customer ID": [1, 2, 3, 4, 5, 6],
+            "Invoice": ["A", "B", "C", "D", "E", "F"],
+            "InvoiceDate": pd.to_datetime([
+                "2010-01-01", "2010-02-01", "2010-03-01", "2010-04-01",
+                "2011-01-01", "2011-01-02",
+            ]),
+            "Quantity": [1, 2, 3, 4, 5000, 6000],
+            "Price": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "Country": ["UK"] * 6,
+        })
+        cleaned = clean(df, config)
+        assert 5000 not in cleaned["Quantity"].values
+        assert 6000 not in cleaned["Quantity"].values
+
 
 # ---------------------------------------------------------------------------
 # Loader
@@ -241,6 +281,34 @@ class TestReadFile:
         path.write_text("hello", encoding="utf-8")
         with pytest.raises(ValueError, match="Unsupported file_type"):
             _read_file(path, "docx", None)
+
+    def test_multi_sheet_excel_concatenates_matching_columns(self, tmp_path):
+        path = tmp_path / "multi.xlsx"
+        with pd.ExcelWriter(path) as writer:
+            pd.DataFrame({"a": [1, 2], "b": ["x", "y"]}).to_excel(
+                writer, sheet_name="Year1", index=False
+            )
+            pd.DataFrame({"a": [3], "b": ["z"]}).to_excel(
+                writer, sheet_name="Year2", index=False
+            )
+
+        df = _read_file(path, "excel", None)
+
+        assert len(df) == 3
+        assert list(df.columns) == ["a", "b"]
+
+    def test_multi_sheet_excel_rejects_mismatched_columns(self, tmp_path):
+        path = tmp_path / "mismatched.xlsx"
+        with pd.ExcelWriter(path) as writer:
+            pd.DataFrame({"a": [1], "b": ["x"]}).to_excel(
+                writer, sheet_name="Year1", index=False
+            )
+            pd.DataFrame({"a": [2], "c": ["y"]}).to_excel(
+                writer, sheet_name="Year2", index=False
+            )
+
+        with pytest.raises(ValueError, match="differ from sheet"):
+            _read_file(path, "excel", None)
 
 
 class TestLoad:

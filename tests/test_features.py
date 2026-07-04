@@ -24,6 +24,7 @@ from features.invariants import (
     REQUIRED_COLUMNS,
     assert_no_future_transactions,
     assert_required_columns,
+    assert_sufficient_future_window,
     revenue_column,
 )
 from features.labels import build_labels
@@ -124,6 +125,26 @@ class TestAssertNoFutureTransactions:
         df = pd.DataFrame({"invoice_id": ["A"]})
         with pytest.raises(ValueError, match="missing required date column"):
             assert_no_future_transactions(df, snapshot, "invoice_date")
+
+
+class TestAssertSufficientFutureWindow:
+    def test_passes_when_window_fully_covered(self, snapshot):
+        df = pd.DataFrame({
+            "invoice_date": pd.to_datetime([snapshot + pd.Timedelta(days=90)]),
+        })
+        assert_sufficient_future_window(df, snapshot, 90, "invoice_date")
+
+    def test_raises_when_data_ends_before_window(self, snapshot):
+        df = pd.DataFrame({
+            "invoice_date": pd.to_datetime([snapshot + pd.Timedelta(days=8)]),
+        })
+        with pytest.raises(ValueError, match="Insufficient future data"):
+            assert_sufficient_future_window(df, snapshot, 90, "invoice_date")
+
+    def test_raises_when_no_data_at_all(self, snapshot):
+        df = pd.DataFrame({"invoice_date": pd.to_datetime([snapshot])})
+        with pytest.raises(ValueError, match="Insufficient future data"):
+            assert_sufficient_future_window(df, snapshot, 90, "invoice_date")
 
 
 class TestRevenueColumn:
@@ -439,10 +460,33 @@ class TestBuildLabels:
         # outside the 90-day CLV window so it's excluded.
         assert labels.loc[3.0, "clv"] == pytest.approx(20.0)
 
-    def test_pre_snapshot_only_customers_can_still_be_churned(self, transactions, snapshot):
-        # No post-snapshot activity at all → everyone churned.
+    def test_raises_when_no_data_covers_the_label_window(self, transactions, snapshot):
+        # `transactions` has no rows at all after the snapshot. With no way
+        # to tell "genuinely churned" apart from "we simply don't have that
+        # far into the future yet" (right-censoring), this must raise
+        # rather than silently label everyone churn=1.
+        with pytest.raises(ValueError, match="Insufficient future data"):
+            build_labels(
+                transactions,
+                snapshot_date=snapshot,
+                churn_window_days=90,
+                clv_window_days=90,
+            )
+
+    def test_genuinely_churned_customers_flagged_when_window_is_covered(self, transactions, snapshot):
+        # Extend the data so the full 90-day window actually exists (a
+        # customer buys on day 90), while customers 1-3 still have zero
+        # purchases in that window — a real churn signal, not censoring.
+        future_anchor = pd.DataFrame({
+            "customer_id": [4],
+            "invoice_id": ["Z1"],
+            "invoice_date": pd.to_datetime([snapshot + pd.Timedelta(days=90)]),
+            "quantity": [1],
+            "unit_price": [1.0],
+        })
+        df = pd.concat([transactions, future_anchor], ignore_index=True)
         labels = build_labels(
-            transactions,
+            df,
             snapshot_date=snapshot,
             churn_window_days=90,
             clv_window_days=90,
@@ -635,23 +679,26 @@ class TestBuildTimeSplits:
         """A transaction frame that spans three snapshot dates.
 
         Customer activity deliberately straddles each snapshot so the
-        churn label flips for at least one customer per split.
+        churn label flips for at least one customer per split. The trailing
+        row (cust 3, 2011-09-01) exists purely so the test snapshot
+        (2011-06-01) has a full 90-day window to observe — without it,
+        every test-split label would be silently right-censored.
         """
         return pd.DataFrame({
             "customer_id": [
                 1, 1,        # cust 1 active through Apr 2010
                 2, 2, 2,     # cust 2 active through Dec 2010
-                3, 3, 3, 3,  # cust 3 active through Mar 2011
+                3, 3, 3, 3, 3,  # cust 3 active through Sep 2011
             ],
-            "invoice_id": ["A1", "A2", "B1", "B2", "B3", "C1", "C2", "C3", "C4"],
+            "invoice_id": ["A1", "A2", "B1", "B2", "B3", "C1", "C2", "C3", "C4", "C5"],
             "invoice_date": pd.to_datetime([
                 "2010-01-15", "2010-04-20",  # cust 1
                 "2010-03-01", "2010-06-15", "2010-09-30",  # cust 2
-                "2010-07-01", "2010-10-01", "2011-01-15", "2011-03-20",  # cust 3
+                "2010-07-01", "2010-10-01", "2011-01-15", "2011-03-20", "2011-09-01",  # cust 3
             ]),
-            "quantity": [1, 2, 1, 3, 2, 1, 1, 2, 1],
-            "unit_price": [10.0, 8.0, 12.0, 11.0, 9.0, 5.0, 6.0, 4.0, 7.0],
-            "StockCode": ["X"] * 9,
+            "quantity": [1, 2, 1, 3, 2, 1, 1, 2, 1, 1],
+            "unit_price": [10.0, 8.0, 12.0, 11.0, 9.0, 5.0, 6.0, 4.0, 7.0, 3.0],
+            "StockCode": ["X"] * 10,
         })
 
     def test_returns_time_split_with_three_pairs(self, long_history):

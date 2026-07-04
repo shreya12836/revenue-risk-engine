@@ -37,10 +37,7 @@ def merge_features(frames: list[pd.DataFrame], on: str = "customer_id") -> pd.Da
             raise ValueError(
                 f"Frame #{i} is missing the join key {on!r}: {list(frame.columns)}"
             )
-        if on in merged.columns:
-            merged = merged.merge(frame, on=on, how="outer")
-        else:
-            merged = merged.merge(frame, on=on, how="outer")
+        merged = merged.merge(frame, on=on, how="outer")
     return merged
 
 
@@ -57,10 +54,10 @@ def build_features(
     2. Computes RFM, rolling-window, customer-statistics, and trend features.
     3. Outer-joins them on ``customer_id``.
 
-    Customers whose first purchase is *after* ``snapshot_date`` are dropped:
-    they have no pre-snapshot history to characterize them, and trying to
-    score them would require different missing-value handling best deferred
-    to the modeling step.
+    Customers who first appear *after* ``snapshot_date`` never enter the
+    feature matrix at all: they have no pre-snapshot history to characterize
+    them, and trying to score them would require different missing-value
+    handling best deferred to the modeling step.
 
     The input frame is expected to use the schema's column names (e.g.
     ``Customer ID`` for Online Retail II). Each per-feature function takes
@@ -79,12 +76,6 @@ def build_features(
             "build_features: no transactions found at or before %s", snapshot.date()
         )
         return pd.DataFrame(columns=["customer_id"])
-
-    # Drop customers who first appear *after* the snapshot — they have no
-    # pre-snapshot history, so no features can be computed honestly.
-    first_purchase = past.groupby(schema.customer_id)[schema.invoice_date].min()
-    eligible_customers = first_purchase[first_purchase <= snapshot].index
-    past = past[past[schema.customer_id].isin(eligible_customers)]
 
     rfm = calculate_rfm(
         past,

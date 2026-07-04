@@ -51,6 +51,36 @@ def assert_no_future_transactions(
         )
 
 
+def assert_sufficient_future_window(
+    df: pd.DataFrame,
+    snapshot_date: pd.Timestamp,
+    window_days: int,
+    date_column: str = "invoice_date",
+) -> None:
+    """Raise ``ValueError`` if the data doesn't reach ``window_days`` past
+    ``snapshot_date``.
+
+    Without this check, a snapshot placed too close to the end of the
+    dataset silently mislabels every non-purchasing customer as churned:
+    the absence of *data* (right-censoring) gets mistaken for the absence
+    of a *purchase*. Call this before computing a label window, not a
+    feature window — features are allowed to end at the data boundary,
+    labels are not.
+    """
+    snapshot = pd.Timestamp(snapshot_date)
+    required_through = snapshot + pd.Timedelta(days=window_days)
+    max_date = df[date_column].max()
+
+    if pd.isna(max_date) or max_date < required_through:
+        available = "no data" if pd.isna(max_date) else f"data only through {max_date.date()}"
+        raise ValueError(
+            "Insufficient future data to build a full label window: "
+            f"snapshot={snapshot.date()} + {window_days}d requires data "
+            f"through {required_through.date()}, but {available}. This "
+            "snapshot would silently mislabel censored customers as churned."
+        )
+
+
 def assert_required_columns(
     df: pd.DataFrame,
     required: tuple[str, ...] = REQUIRED_COLUMNS,

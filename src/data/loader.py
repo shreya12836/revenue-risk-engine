@@ -54,10 +54,21 @@ def _read_file(
         # and returns a DataFrame directly.
         result = pd.read_excel(path, sheet_name=sheet_name)
         if isinstance(result, dict):
-            frames = list(result.values())
-            if not frames:
+            if not result:
                 return pd.DataFrame()
-            return pd.concat(frames, ignore_index=True)
+            sheet_names = list(result.keys())
+            reference_columns = set(result[sheet_names[0]].columns)
+            for name in sheet_names[1:]:
+                columns = set(result[name].columns)
+                if columns != reference_columns:
+                    raise ValueError(
+                        f"Excel sheet {name!r} has columns {sorted(columns)}, "
+                        f"which differ from sheet {sheet_names[0]!r}'s "
+                        f"{sorted(reference_columns)}. Refusing to "
+                        "concatenate mismatched sheets — a silent column "
+                        "split would drop rows downstream with no error."
+                    )
+            return pd.concat(result.values(), ignore_index=True)
         return result
     if file_type == "csv":
         return pd.read_csv(path)

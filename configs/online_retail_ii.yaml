@@ -28,7 +28,11 @@ features:
   snapshot_dates:
     train: "2010-06-01"
     val: "2010-12-01"
-    test: "2011-12-01"
+    # Data ends 2011-12-09. A 90-day churn/CLV window needs data through
+    # snapshot + 90d, so the latest safe test snapshot is ~2011-09-10;
+    # 2011-09-01 keeps a margin. A later date silently mislabels censored
+    # customers as churned (see assert_sufficient_future_window).
+    test: "2011-09-01"
   churn_window_days: 90
   clv_window_days: 90
   rolling_windows: [30, 60, 90]

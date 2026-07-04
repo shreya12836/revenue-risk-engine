@@ -50,7 +50,7 @@ dataset:
   source_url: https://example.com/x.csv
   local_path: data/x.csv
   file_type: csv
-schema:
+dataset_schema:
   customer_id: Customer ID
   invoice_id: Invoice
   invoice_date: InvoiceDate
@@ -86,7 +86,7 @@ output:
         encoding="utf-8",
     )
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="outlier_method"):
         load_config(bad)
 
 

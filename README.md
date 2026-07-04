@@ -85,12 +85,22 @@ snapshot date. Snapshot-date alignment is verified by a dedicated
 | `features.labels` | Churn (binary) and CLV (future revenue) labels |
 | `features.splits` | Time-aware train / val / test split construction |
 
+Every label window is also guarded by `assert_sufficient_future_window`: if
+a snapshot sits too close to the end of the available data, building labels
+raises instead of silently mislabeling censored customers as churned.
+
 **Verified on real data** (Online Retail II, both sheets, 1,067,371 rows):
 
-| Split | Snapshot | Customers | Features | Churn rate |
-|-------|----------|-----------|----------|------------|
-| train | 2010-06-01 | 2,577 | 33 | 51.3% |
-| val   | 2010-12-01 | 4,096 | 33 | 67.4% |
-| test  | 2011-12-01 | 5,649 | 33 | 90.1% |
+| Split | Snapshot   | Customers | Features | Churn rate |
+|-------|------------|-----------|----------|------------|
+| train | 2010-06-01 | 2,577     | 33       | 51.3%      |
+| val   | 2010-12-01 | 4,096     | 33       | 67.4%      |
+| test  | 2011-09-01 | 5,053     | 33       | 57.5%      |
+
+The test snapshot is 2011-09-01, not the data's tail end (2011-12-09) —
+close to the end, and there's not enough runway left for a 90-day churn/CLV
+window to observe genuine repeat purchases, so labels quietly collapse
+toward "everyone churned." `assert_sufficient_future_window` now raises the
+moment a config change would do that again.
 
 Run the smoke test to reproduce: `python scripts/smoke_features.py`
