@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -427,7 +426,9 @@ class TestBuildLabels:
             "unit_price": [10.0, 20.0, 5.0],
         })
 
-    def test_churn_flag_flips_on_post_snapshot_activity(self, transactions, post_snapshot_activity, snapshot):
+    def test_churn_flag_flips_on_post_snapshot_activity(
+        self, transactions, post_snapshot_activity, snapshot
+    ):
         df = pd.concat([transactions, post_snapshot_activity], ignore_index=True)
         labels = build_labels(
             df,
@@ -443,7 +444,9 @@ class TestBuildLabels:
         # cust 3 has 1 invoice in churn window → churn=0
         assert labels.loc[3.0, "churn"] == 0
 
-    def test_clv_sums_only_post_snapshot_revenue(self, transactions, post_snapshot_activity, snapshot):
+    def test_clv_sums_only_post_snapshot_revenue(
+        self, transactions, post_snapshot_activity, snapshot
+    ):
         df = pd.concat([transactions, post_snapshot_activity], ignore_index=True)
         labels = build_labels(
             df,
@@ -473,7 +476,9 @@ class TestBuildLabels:
                 clv_window_days=90,
             )
 
-    def test_genuinely_churned_customers_flagged_when_window_is_covered(self, transactions, snapshot):
+    def test_genuinely_churned_customers_flagged_when_window_is_covered(
+        self, transactions, snapshot
+    ):
         # Extend the data so the full 90-day window actually exists (a
         # customer buys on day 90), while customers 1-3 still have zero
         # purchases in that window — a real churn signal, not censoring.
@@ -568,8 +573,6 @@ class TestBuildFeatures:
             "quantity":   [1, 2, 3, 1],
             "unit_price": [10.0, 5.0, 7.5, 1.0],
         })
-
-        from utils.config import FeaturesConfig
 
         class _StubFeatures:
             rolling_windows = [30]
