@@ -1,15 +1,19 @@
-"""Day-6 pipeline: Optuna tuning, SHAP explainability, versioning, comparison.
+"""End-to-end training pipeline: tune, retrain, evaluate, explain, persist.
 
 Like ``smoke_train.py``, this is NOT a pytest test — it runs the full
-tune -> retrain -> evaluate -> explain -> persist pipeline against the real
-Online Retail II dataset and prints a human-readable summary.
+tune -> retrain -> evaluate -> explain -> persist -> verify pipeline against
+the real Online Retail II dataset and prints a human-readable summary. The
+final step reloads the just-saved artifacts through ``ChurnPredictor`` (the
+same shared inference module the future FastAPI endpoint will use) as an
+integration check that training output and inference input actually agree.
 
 Usage:
-    python scripts/run_tuning_pipeline.py
+    python scripts/train.py --config configs/online_retail_ii.yaml
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -21,11 +25,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import joblib  # noqa: E402
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from data.cleaner import clean  # noqa: E402
 from data.loader import load  # noqa: E402
-from features.splits import build_time_splits  # noqa: E402
+from features.splits import build_time_splits, save_feature_names  # noqa: E402
 from models.dataset import prepare_xy  # noqa: E402
 from models.evaluate import (  # noqa: E402
     compute_classification_metrics,
@@ -39,11 +44,11 @@ from models.explain import (  # noqa: E402
     save_shap_summary_plot,
     save_shap_waterfall_plot,
 )
-from models.predictor import build_feature_schema, save_feature_schema  # noqa: E402
+from models.predict import ChurnPredictor, build_feature_schema, save_feature_schema  # noqa: E402
 from models.train import LIFT_K, train_baseline, train_xgboost  # noqa: E402
 from models.tuning import train_xgboost_with_params, tune_xgboost  # noqa: E402
 from models.versioning import build_metadata, save_model_version  # noqa: E402
-from utils.config import load_config  # noqa: E402
+from utils.config import DEFAULT_CONFIG_PATH, load_config  # noqa: E402
 
 
 def _section(title: str) -> None:
@@ -62,8 +67,20 @@ def _evaluate(proba, y_true, historical_value) -> dict:
     return metrics
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to the project YAML config (default: %(default)s)",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
-    config = load_config()
+    args = _parse_args()
+    config = load_config(args.config)
     tuning_cfg = config.modeling.hyperparameter_tuning
     print(
         f"Loaded config. n_trials={tuning_cfg.n_trials} timeout={tuning_cfg.timeout}s "
@@ -154,6 +171,7 @@ def main() -> int:
 
     schema = build_feature_schema(X_trainval, version="v1")
     save_feature_schema(schema, output_dir / "feature_schema.json")
+    save_feature_names(split.train.features, output_dir / "feature_names.json")
 
     (output_dir / "best_params.json").write_text(
         json.dumps(study.best_params, indent=2), encoding="utf-8"
@@ -178,6 +196,16 @@ def main() -> int:
     save_diagnostic_plots(y_test, tuned_proba, figures_dir, prefix="xgboost_tuned_")
 
     print(f"  artifacts written to: {output_dir}")
+
+    _section("Verify: reload persisted artifacts through ChurnPredictor")
+    predictor = ChurnPredictor.from_artifacts(output_dir, version="v1")
+    reloaded_proba, reloaded_shap = predictor.predict_with_shap(X_test)
+    np.testing.assert_allclose(reloaded_proba, tuned_proba)
+    assert reloaded_shap.values.shape == (len(X_test), X_test.shape[1])
+    print(
+        "  OK: model_v1.joblib + feature_schema.json round-trip through "
+        "ChurnPredictor and reproduce the in-memory predictions exactly."
+    )
 
     _section("Summary")
     print(f"  baseline        PR-AUC: {results['baseline']['pr_auc']:.4f}")
