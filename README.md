@@ -209,6 +209,21 @@ a lower-spend-but-consistent one. That argues for cadence-based retention
 triggers ("no order in N days, beyond this customer's usual gap") over
 pure spend-tier segmentation.
 
+![SHAP summary plot](docs/images/shap_summary.png)
+
+*Global feature importance: each dot is one customer, color is feature
+value (red = high). `days_between_txns` and `recency_days` dominate.*
+
+![SHAP waterfall for a single customer](docs/images/shap_waterfall.png)
+
+*Per-customer explanation for the highest-risk test customer — shows
+which features pushed their churn probability up (red) or down (blue)
+from the model's average output.*
+
+![Tuned XGBoost ROC curve](docs/images/xgboost_tuned_roc_curve.png)
+![Tuned XGBoost precision-recall curve](docs/images/xgboost_tuned_pr_curve.png)
+![Tuned XGBoost calibration curve](docs/images/xgboost_tuned_calibration_curve.png)
+
 **Artifacts saved per run** to `outputs/<UTC-timestamp>/`: `model_v1.joblib`
 and `metadata.json` (git commit, training date, hyperparameters, split
 sizes — full reproducibility), `feature_schema.json` (the contract
