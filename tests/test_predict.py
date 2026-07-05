@@ -1,4 +1,4 @@
-"""Tests for ChurnPredictor: schema-validated inference (Day 6).
+"""Tests for ChurnPredictor: the shared schema-validated inference module.
 
 ``feature_schema.json`` exists specifically to back ``predict_proba``'s
 boundary validation — a DataFrame payload can't be validated by Pydantic
@@ -13,9 +13,10 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytest
+import shap
 from xgboost import XGBClassifier
 
-from models.predictor import ChurnPredictor, build_feature_schema, save_feature_schema
+from models.predict import ChurnPredictor, build_feature_schema, save_feature_schema
 
 
 @pytest.fixture
@@ -120,3 +121,51 @@ class TestChurnPredictor:
         expected = model.predict_proba(X)[:, 1]
         actual = predictor.predict_proba(X)
         np.testing.assert_allclose(actual, expected)
+
+
+class TestChurnPredictorSHAP:
+    def test_predict_with_shap_proba_matches_predict_proba(self, fitted_model_and_data):
+        model, X = fitted_model_and_data
+        schema = build_feature_schema(X)
+        predictor = ChurnPredictor(model=model, schema=schema)
+
+        expected = predictor.predict_proba(X)
+        actual, _ = predictor.predict_with_shap(X)
+
+        np.testing.assert_allclose(actual, expected)
+
+    def test_predict_with_shap_returns_explanation_shaped_like_input(
+        self, fitted_model_and_data
+    ):
+        model, X = fitted_model_and_data
+        schema = build_feature_schema(X)
+        predictor = ChurnPredictor(model=model, schema=schema)
+
+        _, shap_values = predictor.predict_with_shap(X)
+
+        assert isinstance(shap_values, shap.Explanation)
+        assert shap_values.values.shape == (len(X), X.shape[1])
+
+    def test_predict_with_shap_reorders_columns_to_schema_order(
+        self, fitted_model_and_data
+    ):
+        model, X = fitted_model_and_data
+        schema = build_feature_schema(X)
+        predictor = ChurnPredictor(model=model, schema=schema)
+
+        shuffled = X[list(reversed(X.columns))]
+        expected_proba = model.predict_proba(X)[:, 1]
+        actual_proba, _ = predictor.predict_with_shap(shuffled)
+
+        np.testing.assert_allclose(actual_proba, expected_proba)
+
+    def test_predict_with_shap_raises_on_missing_feature_column(
+        self, fitted_model_and_data
+    ):
+        model, X = fitted_model_and_data
+        schema = build_feature_schema(X)
+        predictor = ChurnPredictor(model=model, schema=schema)
+
+        incomplete = X.drop(columns=["monetary"])
+        with pytest.raises(ValueError, match="monetary"):
+            predictor.predict_with_shap(incomplete)

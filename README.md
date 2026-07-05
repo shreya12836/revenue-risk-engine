@@ -226,11 +226,45 @@ from the model's average output.*
 
 **Artifacts saved per run** to `outputs/<UTC-timestamp>/`: `model_v1.joblib`
 and `metadata.json` (git commit, training date, hyperparameters, split
-sizes — full reproducibility), `feature_schema.json` (the contract
-`ChurnPredictor.from_artifacts` validates incoming data against),
-`best_params.json`, `optuna_study.pkl`, `metrics.json` (all three models),
-`feature_importance.csv` (XGBoost-native and mean-|SHAP| side by side), and
-`figures/shap_summary.png` / `figures/shap_waterfall_<customer_id>.png`
+sizes — full reproducibility), `feature_schema.json` and `feature_names.json`
+(the contracts `ChurnPredictor.from_artifacts` validates incoming data
+against), `best_params.json`, `optuna_study.pkl`, `metrics.json` (all three
+models), `feature_importance.csv` (XGBoost-native and mean-|SHAP| side by
+side), and `figures/shap_summary.png` / `figures/shap_waterfall_<customer_id>.png`
 alongside the tuned model's ROC / PR / calibration plots.
 
-Run the pipeline to reproduce: `python scripts/run_tuning_pipeline.py`
+Run the pipeline to reproduce:
+`python scripts/train.py --config configs/online_retail_ii.yaml`
+
+## Shared Predict Module & End-to-End Integration (Day 7)
+
+Every consumer of the tuned model — the training pipeline's SHAP step, the
+inference layer, and the future FastAPI endpoint — now scores through the
+same `ChurnPredictor` in `src/models/predict.py`, so column validation and
+ordering logic exists in exactly one place instead of being reimplemented
+per caller. `predict_with_shap` extends the Day 6 `predict_proba` with a
+per-call SHAP explanation, reusing the identical schema-validation step so
+the probability and its explanation can never silently disagree about
+which columns (or column order) produced them.
+
+`scripts/train.py --config <path>` is the single entry point for the full
+pipeline — load, clean, split, tune, retrain, evaluate, explain, persist —
+and now ends with an integration check: it reloads the just-saved
+`model_v1.joblib` + `feature_schema.json` through
+`ChurnPredictor.from_artifacts` and asserts the reloaded predictions
+exactly match the in-memory ones, so a broken save/load round trip fails
+the pipeline run itself rather than surfacing later as a silent scoring
+mismatch in production.
+
+**Leakage audit:** the full test suite (`make test`) re-verifies every
+leakage guard introduced since Day 3 — snapshot-date boundary checks in
+every feature function, `assert_sufficient_future_window` on label
+construction, and fit-on-train-only preprocessing (imputer, scaler, SMOTE)
+— alongside the new `predict.py` and `train.py` coverage.
+
+Run the full pipeline and test gate to reproduce:
+
+```bash
+python scripts/train.py --config configs/online_retail_ii.yaml
+make test
+```
