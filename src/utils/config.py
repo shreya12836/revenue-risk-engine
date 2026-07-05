@@ -4,6 +4,7 @@ Each top-level section in the YAML is mapped to a typed Pydantic model.
 ``load_config`` returns a fully validated :class:`ProjectConfig` instance so
 downstream code can rely on attribute access and strict type checking.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,10 +13,10 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # ---------------------------------------------------------------------------
 # Section models
 # ---------------------------------------------------------------------------
+
 
 class DatasetConfig(BaseModel):
     name: str
@@ -69,9 +70,7 @@ class FeaturesConfig(BaseModel):
         required = {"train", "val", "test"}
         missing = required - set(value.keys())
         if missing:
-            raise ValueError(
-                f"snapshot_dates missing required keys: {sorted(missing)}"
-            )
+            raise ValueError(f"snapshot_dates missing required keys: {sorted(missing)}")
         return value
 
 
@@ -96,6 +95,10 @@ class OutputConfig(BaseModel):
     tables_dir: str
 
 
+class ApiConfig(BaseModel):
+    max_batch_size: int = Field(gt=0)
+
+
 class ProjectConfig(BaseModel):
     # ``protected_namespaces`` silences the harmless Pydantic v2 warning that
     # would otherwise trigger from any model-prefixed attribute. We name the
@@ -110,6 +113,7 @@ class ProjectConfig(BaseModel):
     features: FeaturesConfig
     modeling: ModelingConfig
     output: OutputConfig
+    api: ApiConfig
 
 
 # ---------------------------------------------------------------------------
@@ -130,9 +134,7 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> ProjectConfig:
         raw: Any = yaml.safe_load(file)
 
     if not isinstance(raw, dict):
-        raise ValueError(
-            f"Config file must contain a YAML mapping: {config_path}"
-        )
+        raise ValueError(f"Config file must contain a YAML mapping: {config_path}")
 
     # Pydantic raises ``ValidationError`` on any structural problem.
     return ProjectConfig.model_validate(raw, by_name=True)

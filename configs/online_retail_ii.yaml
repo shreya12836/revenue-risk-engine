@@ -54,3 +54,8 @@ output:
   model_dir: "models/"
   figures_dir: "outputs/figures/"
   tables_dir: "outputs/tables/"
+
+api:
+  # Ceiling on records per /predict/batch call, kept config-driven so it can
+  # be tuned per deployment without a code change.
+  max_batch_size: 500
