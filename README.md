@@ -64,8 +64,10 @@ The default project config lives at `configs/online_retail_ii.yaml`. It defines:
 2. ~~Add config-driven data loading and cleaning.~~ ✅
 3. ~~Build customer feature generation and labels.~~ ✅
 4. ~~Add baseline churn model training and evaluation.~~ ✅
-5. Save inference artifacts and expose a FastAPI prediction endpoint.
-6. Add dashboard views for customer risk and revenue exposure.
+5. ~~Add Optuna tuning, SHAP explainability, and versioned model artifacts.~~ ✅
+6. Expose the versioned model through a FastAPI prediction endpoint
+   (`ChurnPredictor` — see Day 6 — is the inference layer this will wrap).
+7. Add dashboard views for customer risk and revenue exposure.
 
 ## Feature Engineering (Day 3)
 
@@ -156,3 +158,64 @@ models (`.joblib`), `metrics.json`, `params.json`, `feature_names.json`,
 and ROC / precision-recall / calibration-curve plots per model.
 
 Run the smoke test to reproduce: `python scripts/smoke_train.py`
+
+## Hyperparameter Tuning & Explainability (Day 6)
+
+XGBoost's defaults were never tuned in Day 4 — hyperparameter search was
+explicitly deferred until this step. An Optuna search (50 trials, 10-minute
+timeout, both read from `configs/online_retail_ii.yaml`) optimizes **PR-AUC**
+via 5-fold `TimeSeriesSplit` CV on the train split, not ROC-AUC: churn is
+imbalanced, and ROC-AUC is optimistic under imbalance in a way that would
+misrepresent how the model performs on the minority (churned) class.
+
+**3-way comparison** (held-out **test** snapshot 2011-09-01 — unlike the
+Day 4 table above, which reports val-split metrics, these three models are
+scored on the test split that CV and tuning never touched, for an
+unbiased final comparison):
+
+| Metric | Logistic Regression (baseline) | XGBoost (default) | XGBoost (tuned) |
+|--------|---------------------------------|--------------------|-------------------|
+| ROC-AUC | 0.777 | 0.746 | 0.784 |
+| PR-AUC | 0.810 | 0.758 | 0.799 |
+| Precision | 0.775 | 0.723 | 0.721 |
+| Recall | 0.680 | 0.726 | 0.844 |
+| F1 | 0.725 | 0.724 | 0.778 |
+| Brier score | 0.224 | 0.204 | 0.184 |
+| Lift @ top 10% | 1.58x | 1.45x | 1.48x |
+| Revenue-at-risk (test total) | $85,639 | $164,034 | $239,829 |
+
+Tuning closes most of the gap between XGBoost and the baseline that Day 4
+flagged as an open question: PR-AUC improves from 0.758 to 0.799 and Brier
+score (calibration) improves from 0.204 to 0.184, but the logistic
+regression baseline still edges out tuned XGBoost on PR-AUC (0.810 vs
+0.799) on this dataset's ~2,600 training rows. That's an honest result,
+not a discrepancy to explain away — with this little training data, more
+data or feature engineering is likely a bigger lever than further tuning.
+
+Best hyperparameters found (best CV PR-AUC on train: 0.724):
+`n_estimators=400, max_depth=6, learning_rate=0.023, subsample=0.745,
+colsample_bytree=0.628, min_child_weight=6, gamma=3.98, reg_alpha=7.53,
+reg_lambda=9.89`.
+
+**SHAP explainability** (`shap.TreeExplainer` on the tuned model only —
+it's the model that would actually ship, so it's the one worth explaining):
+the top 3 features by mean absolute SHAP value are `days_between_txns`,
+`recency_days`, and `first_purchase_days` — all measures of transaction
+*cadence and tenure*, not raw spend. In business terms, the model's
+strongest churn signal is a customer's rhythm going quiet relative to
+their own history, not how much they've spent historically: a high-spend
+customer who suddenly stops ordering is flagged as high-risk well before
+a lower-spend-but-consistent one. That argues for cadence-based retention
+triggers ("no order in N days, beyond this customer's usual gap") over
+pure spend-tier segmentation.
+
+**Artifacts saved per run** to `outputs/<UTC-timestamp>/`: `model_v1.joblib`
+and `metadata.json` (git commit, training date, hyperparameters, split
+sizes — full reproducibility), `feature_schema.json` (the contract
+`ChurnPredictor.from_artifacts` validates incoming data against),
+`best_params.json`, `optuna_study.pkl`, `metrics.json` (all three models),
+`feature_importance.csv` (XGBoost-native and mean-|SHAP| side by side), and
+`figures/shap_summary.png` / `figures/shap_waterfall_<customer_id>.png`
+alongside the tuned model's ROC / PR / calibration plots.
+
+Run the pipeline to reproduce: `python scripts/run_tuning_pipeline.py`
