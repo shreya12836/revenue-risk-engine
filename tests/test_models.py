@@ -13,6 +13,8 @@ Mirrors the property-based framing used in ``test_features.py``:
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -25,6 +27,7 @@ from models.evaluate import (
     revenue_at_risk,
 )
 from models.preprocessing import apply_imputer, fit_imputer
+from models.cv import build_cv_report, run_cv_pipeline, run_time_cv
 from models.train import train_baseline, train_xgboost
 
 # ---------------------------------------------------------------------------
@@ -307,3 +310,155 @@ class TestTrainXgboost:
         train_xgboost(X_train, y_train)
 
         pd.testing.assert_frame_equal(X_train, original_X)
+
+
+# ---------------------------------------------------------------------------
+# cv.run_time_cv / build_cv_report
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cv_fixtures():
+    """Create a deterministic 40-row dataset for CV tests.
+
+    With 40 rows and TimeSeriesSplit(n_splits=4):
+      - test_size = 40 / (4+1) = 8
+      - fold 1: train=8, val=8
+      - fold 2: train=16, val=8
+      - fold 3: train=24, val=8
+      - fold 4: train=32, val=8
+
+    Even the smallest training fold has 8 rows, which with roughly 50/50
+    class balance guarantees at least 2 minority samples per fold — enough
+    for SMOTE to run and for logistic regression to converge.
+    """
+    rng = np.random.RandomState(0)
+    n = 40
+    X = pd.DataFrame(
+        {
+            "recency_days": rng.uniform(0, 100, n),
+            "monetary": rng.uniform(10, 1000, n),
+        }
+    )
+    # y is correlated with recency so the model has a real signal to learn.
+    y = pd.Series((X["recency_days"] > 50).astype(int).values)
+    return X, y
+
+
+class TestRunTimeCv:
+    def test_returns_results_for_both_models(self, cv_fixtures):
+        X, y = cv_fixtures
+        results = run_time_cv(X, y, n_folds=3)
+        assert "baseline" in results
+        assert "xgboost" in results
+
+    def test_correct_number_of_folds(self, cv_fixtures):
+        X, y = cv_fixtures
+        n_folds = 4
+        results = run_time_cv(X, y, n_folds=n_folds)
+        assert len(results["baseline"]["fold_metrics"]) == n_folds
+        assert len(results["xgboost"]["fold_metrics"]) == n_folds
+
+    def test_fold_indices_are_time_ordered(self, cv_fixtures):
+        X, y = cv_fixtures
+        n_folds = 3
+
+        results = run_time_cv(X, y, n_folds=n_folds)
+        # TimeSeriesSplit always expands: train sizes should be strictly
+        # increasing across folds.
+        train_sizes = [fm["n_train"] for fm in results["baseline"]["fold_metrics"]]
+        assert train_sizes == sorted(train_sizes), "TimeSeriesSplit must expand"
+
+    def test_aggregate_mean_and_std_present(self, cv_fixtures):
+        X, y = cv_fixtures
+        results = run_time_cv(X, y, n_folds=3)
+        for name in ("baseline", "xgboost"):
+            assert "mean" in results[name]
+            assert "std" in results[name]
+            assert "roc_auc" in results[name]["mean"]
+            assert "pr_auc" in results[name]["mean"]
+
+    def test_roc_auc_and_pr_auc_in_fold_metrics(self, cv_fixtures):
+        X, y = cv_fixtures
+        results = run_time_cv(X, y, n_folds=3)
+        for name in ("baseline", "xgboost"):
+            for fm in results[name]["fold_metrics"]:
+                assert "roc_auc" in fm
+                assert "pr_auc" in fm
+                assert 0 <= fm["roc_auc"] <= 1
+                assert 0 <= fm["pr_auc"] <= 1
+
+    def test_mean_in_range_of_fold_values(self, cv_fixtures):
+        X, y = cv_fixtures
+        results = run_time_cv(X, y, n_folds=3)
+        for name in ("baseline", "xgboost"):
+            for metric in ("roc_auc", "pr_auc"):
+                mean = results[name]["mean"][metric]
+                std = results[name]["std"][metric]
+                fold_values = [fm[metric] for fm in results[name]["fold_metrics"]]
+                assert mean >= min(fold_values) - 1e-6
+                assert mean <= max(fold_values) + 1e-6
+                assert std >= 0
+
+    def test_scale_pos_weight_computed_if_not_supplied(self, cv_fixtures):
+        X, y = cv_fixtures
+        results = run_time_cv(X, y, n_folds=3, scale_pos_weight=None)
+        # Should not raise; scale_pos_weight was derived from the split.
+        assert "baseline" in results
+
+
+class TestBuildCvReport:
+    def test_returns_dataframe_with_correct_columns(self, cv_fixtures):
+        X, y = cv_fixtures
+        cv_results = run_time_cv(X, y, n_folds=3)
+        df = build_cv_report(cv_results)
+        expected_cols = {
+            "model",
+            "metric",
+            "single_split",
+            "cv_mean",
+            "cv_std",
+            "delta (ss - cv)",
+        }
+        assert set(df.columns) == expected_cols
+
+    def test_one_row_per_model_metric_pair(self, cv_fixtures):
+        X, y = cv_fixtures
+        cv_results = run_time_cv(X, y, n_folds=3)
+        df = build_cv_report(cv_results)
+        assert len(df) == 4  # 2 models x 2 metrics
+
+    def test_single_split_included_when_provided(self, cv_fixtures):
+        X, y = cv_fixtures
+        cv_results = run_time_cv(X, y, n_folds=3)
+        single_split = {"baseline": {"roc_auc": 0.80, "pr_auc": 0.85}}
+        df = build_cv_report(cv_results, single_split_metrics=single_split)
+        row = df[(df["model"] == "baseline") & (df["metric"] == "roc_auc")]
+        assert row["single_split"].values[0] == 0.80
+
+    def test_delta_computed_when_single_split_provided(self, cv_fixtures):
+        X, y = cv_fixtures
+        cv_results = run_time_cv(X, y, n_folds=3)
+        single_split = {"baseline": {"roc_auc": 0.80, "pr_auc": 0.85}}
+        df = build_cv_report(cv_results, single_split_metrics=single_split)
+        row = df[(df["model"] == "baseline") & (df["metric"] == "roc_auc")]
+        delta = row["delta (ss - cv)"].values[0]
+        assert delta is not None
+        # delta = single_split - cv_mean
+        assert abs(delta - (0.80 - row["cv_mean"].values[0])) < 1e-6
+
+    def test_delta_is_nan_when_single_split_not_provided(self, cv_fixtures):
+        X, y = cv_fixtures
+        cv_results = run_time_cv(X, y, n_folds=3)
+        df = build_cv_report(cv_results, single_split_metrics=None)
+        assert df["delta (ss - cv)"].isna().all()
+
+    def test_smoke_run_cv_pipeline(self, cv_fixtures, tmp_path):
+        X, y = cv_fixtures
+        cv_results, comparison_df, output_path = run_cv_pipeline(
+            X, y, n_folds=3, output_dir=tmp_path, compare_single_split=False
+        )
+        assert output_path.exists()
+        data = json.loads(output_path.read_text(encoding="utf-8"))
+        assert "cv_results" in data
+        assert "comparison" in data
