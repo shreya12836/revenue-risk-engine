@@ -79,15 +79,13 @@ def _build_baseline_pipeline(
     When ``minority_count < 2`` the pipeline omits SMOTE entirely (fallback to
     plain logistic regression — still valid; SMOTE is an enhancement).
     """
-    # Only add SMOTE when minority_count >= 2 (enough samples for k_neighbors >= 1).
-    include_smote = (minority_count is not None) and (minority_count >= 2)
-
     steps = [
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler()),
         ("classifier", LogisticRegression(max_iter=1000, random_state=RANDOM_STATE)),
     ]
-    if include_smote:
+    # Only add SMOTE when minority_count >= 2 (enough samples for k_neighbors >= 1).
+    if minority_count is not None and minority_count >= 2:
         # Clamp k_neighbors so SMOTE never receives k_neighbors=0 (which raises).
         effective_k = max(1, min(5, minority_count - 1))
         steps.insert(
