@@ -241,7 +241,7 @@ Every consumer of the tuned model — the training pipeline's SHAP step and the 
 - **Revenue-at-risk is a proxy, not a CLV model.** It's `churn_probability × trailing 90-day spend`, not output from a trained customer-lifetime-value model — CLV regression is explicitly deferred (`models.train.run_training` raises `NotImplementedError` for `target="clv"`).
 - **No live deployment yet.** The service runs locally (`make run-api`) or in CI; it isn't hosted anywhere public at this time.
 
-## Future work
+## v2
 
 - Integrate a second dataset (Olist) to address the small-training-set limitation directly.
 - LightGBM as an additional model family.
