@@ -63,14 +63,13 @@ Online Retail II (.xlsx)
 
 Every consumer of the trained model — the training pipeline's SHAP step and the FastAPI service — scores through the same `ChurnPredictor` class (`src/models/predict.py`). Column validation and ordering logic exists in exactly one place, so no caller can silently disagree with the model that trained it.
 
-## What makes this different from a tutorial
+## Key Differentiators
 
-- **Leakage-proofed, not just split correctly** — every feature function raises a loud `ValueError` if it receives a transaction dated after its snapshot date, and a dedicated `TestLeakageIsImpossible` test verifies it, rather than trusting a train/test split alone.
-- **SMOTE applied inside CV folds, not before splitting** — `src/models/cv.py` wraps `impute → scale → SMOTE → LogisticRegression` in an `imblearn` pipeline inside each `TimeSeriesSplit` fold, so synthetic minority samples can never leak from a validation fold back into training.
-- **Business-framed, not just accuracy-framed** — the headline metric isn't ROC-AUC, it's revenue-at-risk (`churn_probability × recent spend`), so a model score maps directly to "who should retention call first, and how much is on the line."
-- **Reported honestly, including the loss** — the baseline beats tuned XGBoost on PR-AUC on this dataset, and that's stated plainly rather than only reporting favorable numbers.
-- **A real production bug, found and fixed** — the FastAPI `/predict` handler forces `dtype=float` on incoming rows because a `None`-valued nullable feature otherwise infers pandas `object` dtype instead of `NaN`, which XGBoost rejects. Caught before it shipped, with a regression test.
-- **193 tests, ~90% coverage, 100% of API request/response paths covered** — leakage guards, preprocessing discipline, and every FastAPI validation/error branch are all under test, not just the happy path.
+- **Leakage-proof feature engineering** — Every feature enforces snapshot-date validation with dedicated leakage tests.
+- **Leakage-safe model training** — `SMOTE` is applied **inside** each `TimeSeriesSplit` fold using an `imblearn` pipeline.
+- **Business-focused predictions** — Prioritizes customers by **revenue at risk** (`churn_probability × recent_spend`), not just classification metrics.
+- **Production bug caught pre-deployment** — Fixed a FastAPI/XGBoost `dtype` issue and added a regression test.
+- **Extensively tested** — **193 automated tests**, ~**90% coverage**, covering leakage prevention, preprocessing, and complete API validation/error paths.
 
 ## Setup
 
