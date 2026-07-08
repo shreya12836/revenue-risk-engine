@@ -87,7 +87,8 @@ class TestBuildArtifactSummary:
 
         assert summary["Model version"] == "v1"
         assert summary["Git commit"] == "abc123"
-        assert summary["Snapshot date (customer population)"] == config.features.snapshot_dates["test"]
+        expected_snapshot = config.features.snapshot_dates["test"]
+        assert summary["Snapshot date (customer population)"] == expected_snapshot
         assert summary["Active artifact directory"] == str(tmp_path)
 
     def test_git_commit_falls_back_to_unknown_when_missing(self, tmp_path):
