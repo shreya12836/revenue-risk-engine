@@ -4,14 +4,14 @@ install:
 	pip install -e ".[dev]"
 
 test:
-	pytest tests/ -v --cov=src --cov-report=term-missing
+	pytest tests/ -v --cov=src --cov=dashboard --cov-report=term-missing
 
 lint:
-	flake8 src/ tests/ --max-line-length=100
-	mypy src/ --ignore-missing-imports
+	flake8 src/ tests/ dashboard/ --max-line-length=100
+	mypy src/ dashboard/ --ignore-missing-imports
 
 format:
-	black src/ tests/
+	black src/ tests/ dashboard/
 
 run-api:
 	uvicorn src.api.main:app --reload --port 8000

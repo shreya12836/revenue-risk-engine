@@ -9,8 +9,14 @@
 *.pkl
 *.joblib
 
-# Experiment outputs (timestamped run folders per roadmap §6)
-/outputs/
+# Experiment outputs (timestamped run folders per roadmap §6) are not
+# versioned by default -- except one frozen snapshot, committed specifically
+# so the deployed dashboard has a model to load (dashboard/app.py's
+# artifact-discovery guard needs at least one outputs/*/model_v1.joblib to
+# exist; Streamlit Cloud only sees what's committed to the repo).
+/outputs/*
+!/outputs/20260705T224938Z/
+!/outputs/20260705T224938Z/**
 
 # Python
 __pycache__/

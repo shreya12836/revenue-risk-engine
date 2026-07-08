@@ -27,6 +27,7 @@ setup(
         "matplotlib>=3.8",
         "seaborn>=0.13",
         "openpyxl>=3.1",
+        "plotly>=5.18",
     ],
     extras_require={
         "dev": [
