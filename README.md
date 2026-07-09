@@ -4,8 +4,11 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![XGBoost](https://img.shields.io/badge/model-XGBoost-orange)
 ![FastAPI](https://img.shields.io/badge/api-FastAPI-009688)
+[![Live Dashboard](https://img.shields.io/badge/dashboard-live%20demo-FF4B4B?logo=streamlit&logoColor=white)](https://revenue-risk-engine.streamlit.app/)
 
 An e-commerce retailer usually finds out a customer has stopped buying only after they're gone — by which point there's no revenue left to save. This system scores every customer's 90-day churn risk from their transaction history, converts that risk into a **£ revenue-at-risk figure**, and explains each prediction with SHAP, so a retention team knows not just *who* is at risk but *how much is at stake* and *why*. Built on the UCI Online Retail II dataset, served through a schema-validated FastAPI inference service.
+
+**[Try the live dashboard →](https://revenue-risk-engine.streamlit.app/)** — model performance, revenue-at-risk triage, and single-customer SHAP explanations, all interactive.
 
 ## At a glance
 
@@ -28,6 +31,7 @@ Final model (tuned XGBoost, held-out test snapshot):
 - [What makes this different from a tutorial](#what-makes-this-different-from-a-tutorial)
 - [Setup](#setup)
 - [Usage](#usage)
+- [Dashboard](#dashboard)
 - [Results in depth](#results-in-depth)
 - [Limitations](#limitations)
 - [Future work](#future-work)
@@ -113,6 +117,24 @@ curl -X POST http://localhost:8000/predict/batch \
 ```
 
 Malformed input (unknown field, wrong type, out-of-range value, batch over `api.max_batch_size`) returns a `422` with a field-level Pydantic error before it ever reaches the model — see `src/api/schemas.py`. Interactive docs at `/docs`.
+
+## Dashboard
+
+**[Live demo →](https://revenue-risk-engine.streamlit.app/)**
+
+A three-page Streamlit app on top of the same trained artifacts and inference module the API uses — every chart is computed at runtime (live-scored held-out test set, live SHAP, live artifact reads), nothing is a static image:
+
+| Page | What it shows |
+|---|---|
+| **Model Performance** | ROC, Precision-Recall, calibration, and lift/gains curves scored live against the held-out test split; confusion matrix; baseline vs. default vs. tuned model comparison with a plain-language precision/recall tradeoff explanation; global feature importance |
+| **Revenue at Risk** | Portfolio triage view — KPIs (customers, high-risk count, total/average revenue at risk), a Pareto curve ("top X% of customers account for 80% of revenue at risk"), risk broken down by spend/recency/frequency/tenure band, top churn drivers across high-risk customers, and a downloadable filtered customer table |
+| **Single Customer Prediction** | Score one customer on demand, see their SHAP waterfall explanation in plain business language, and compare them against the population on their top risk-driving features |
+
+Run it locally:
+
+```bash
+make run-dashboard     # Streamlit at http://localhost:8501
+```
 
 ## Results in depth
 
@@ -239,7 +261,7 @@ Every consumer of the tuned model — the training pipeline's SHAP step and the 
 - **Small training set** (~2,600 rows). Tuning improved PR-AUC from 0.758 to 0.799, but the logistic-regression baseline still edges out tuned XGBoost (0.810). More data is a bigger lever than further tuning at this scale — see [Future work](#future-work).
 - **Seasonality skews the validation split.** Val-snapshot churn (67.4%) is well above train (51.3%) or test (57.5%) — the val snapshot (2010-12-01) looks 90 days forward across the December holiday lull, which likely inflates apparent churn for that split specifically. Weight the test-split numbers, not the val-split numbers, when judging the model.
 - **Revenue-at-risk is a proxy, not a CLV model.** It's `churn_probability × trailing 90-day spend`, not output from a trained customer-lifetime-value model — CLV regression is explicitly deferred (`models.train.run_training` raises `NotImplementedError` for `target="clv"`).
-- **No live deployment yet.** The service runs locally (`make run-api`) or in CI; it isn't hosted anywhere public at this time.
+- **API has no live deployment yet.** The FastAPI service runs locally (`make run-api`) or in CI; it isn't hosted anywhere public at this time. (The [dashboard](#dashboard) is deployed and public.)
 
 ## v2
 
@@ -266,6 +288,7 @@ Every consumer of the tuned model — the training pipeline's SHAP step and the 
 
 ```text
 configs/              Pydantic-validated YAML configuration
+dashboard/            Streamlit app (pages, services, components) — live demo above
 data/                 Raw dataset (gitignored except smoke-test fixtures)
 docs/                 Architecture notes, roadmap, diagnostic images
 outputs/<timestamp>/  Versioned training artifacts (model, metrics, SHAP figures) — gitignored
