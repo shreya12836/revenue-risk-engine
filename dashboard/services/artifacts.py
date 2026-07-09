@@ -102,19 +102,33 @@ def build_artifact_summary(artifacts_dir_str: str, config: ProjectConfig) -> dic
 
 
 def render_artifact_sidebar(artifacts_dir_str: str) -> None:
-    """Render the Artifact Information block in the sidebar."""
+    """Render the Artifact Information block in the sidebar.
+
+    Collapsed by default (UX polish, not a hidden guard -- the foundational
+    missing-artifacts check already happened before this is called). The raw
+    filesystem path is kept out of the main block and shown only inside a
+    separate "Debug info" expander, also collapsed by default.
+    """
     config = load_config(DEFAULT_CONFIG_PATH)
     summary = build_artifact_summary(artifacts_dir_str, config)
+    debug_only_fields = {"Active artifact directory"}
 
     with st.sidebar:
-        st.markdown("### Artifact Information")
-        for label, value in summary.items():
-            st.caption(f"**{label}**")
-            st.text(value)
-        if st.button("Refresh artifacts", help="Clear caches and re-scan outputs/"):
-            st.cache_data.clear()
-            st.cache_resource.clear()
-            st.rerun()
+        with st.expander("Artifact Information", expanded=False):
+            for label, value in summary.items():
+                if label in debug_only_fields:
+                    continue
+                st.caption(f"**{label}**")
+                st.text(value)
+            if st.button("Refresh artifacts", help="Clear caches and re-scan outputs/"):
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                st.rerun()
+
+        with st.expander("Debug info", expanded=False):
+            for label in debug_only_fields:
+                st.caption(f"**{label}**")
+                st.code(summary[label])
 
 
 def render_sidebar_and_guard() -> str:
