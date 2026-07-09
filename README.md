@@ -4,11 +4,11 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![XGBoost](https://img.shields.io/badge/model-XGBoost-orange)
 ![FastAPI](https://img.shields.io/badge/api-FastAPI-009688)
-[![Live Dashboard](https://img.shields.io/badge/dashboard-live%20demo-FF4B4B?logo=streamlit&logoColor=white)](https://revenue-risk-engine.streamlit.app/)
+[![Live](https://img.shields.io/badge/dashboard-live%20demo-FF4B4B?logo=streamlit&logoColor=white)](https://revenue-risk-engine.streamlit.app/)
 
 An e-commerce retailer usually finds out a customer has stopped buying only after they're gone — by which point there's no revenue left to save. This system scores every customer's 90-day churn risk from their transaction history, converts that risk into a **£ revenue-at-risk figure**, and explains each prediction with SHAP, so a retention team knows not just *who* is at risk but *how much is at stake* and *why*. Built on the UCI Online Retail II dataset, served through a schema-validated FastAPI inference service.
 
-**[Try the live dashboard →](https://revenue-risk-engine.streamlit.app/)** — model performance, revenue-at-risk triage, and single-customer SHAP explanations, all interactive.
+**[ Explore the platform →](https://revenue-risk-engine.streamlit.app/)** — model performance, revenue-at-risk triage, and single-customer SHAP explanations, all interactive.
 
 ## At a glance
 
