@@ -21,13 +21,15 @@ def band_risk_summary(
     if working.empty:
         return pd.DataFrame(columns=["band", "count", "mean_churn_probability", "revenue_at_risk"])
 
-    try:
-        bands = pd.qcut(working[column], q=n_bins, duplicates="drop")
-    except ValueError:
-        # Fewer than 2 distinct values -- everyone falls in one band.
+    if working[column].nunique() < 2:
+        # Fewer than 2 distinct values -- qcut can't form more than one edge
+        # (pandas' exact failure mode for this varies by version), so skip
+        # straight to a single band rather than relying on catching it.
         bands = pd.Series(["all"] * len(working), index=working.index)
+    else:
+        bands = pd.qcut(working[column], q=n_bins, duplicates="drop").astype(str)
 
-    working = working.assign(band=bands.astype(str))
+    working = working.assign(band=bands)
     summary = (
         working.groupby("band", observed=True)
         .agg(
