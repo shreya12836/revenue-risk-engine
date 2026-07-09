@@ -118,9 +118,9 @@ curl -X POST http://localhost:8000/predict/batch \
 
 Malformed input (unknown field, wrong type, out-of-range value, batch over `api.max_batch_size`) returns a `422` with a field-level Pydantic error before it ever reaches the model — see `src/api/schemas.py`. Interactive docs at `/docs`.
 
-## Dashboard
+## Risk Explorer
 
-**[Live demo →](https://revenue-risk-engine.streamlit.app/)**
+**[Live →](https://revenue-risk-engine.streamlit.app/)**
 
 A three-page Streamlit app on top of the same trained artifacts and inference module the API uses — every chart is computed at runtime (live-scored held-out test set, live SHAP, live artifact reads), nothing is a static image:
 
