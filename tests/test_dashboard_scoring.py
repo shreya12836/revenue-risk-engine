@@ -11,7 +11,7 @@ from xgboost import XGBClassifier
 from api.schemas import FEATURE_COLUMNS, NULLABLE_FEATURE_COLUMNS, PredictionRequest
 from models.predict import ChurnPredictor, build_feature_schema
 from services.scoring import attach_revenue_at_risk, score_population
-from services.single_customer import build_prediction_request
+from services.single_customer import build_prediction_request, explain_single_customer
 
 
 def _feature_value(name: str) -> int | float | None:
@@ -67,6 +67,28 @@ class TestScorePopulation:
 
         expected = predictor.predict_proba(X)
         np.testing.assert_allclose(result, expected)
+
+
+class TestExplainSingleCustomer:
+    def test_returns_none_and_does_not_raise_when_predict_with_shap_fails(self, monkeypatch):
+        rng = np.random.RandomState(0)
+        X = pd.DataFrame({col: [rng.uniform(1, 100)] for col in FEATURE_COLUMNS})
+        model = XGBClassifier(n_estimators=5, max_depth=2, eval_metric="logloss", random_state=42)
+        model.fit(X, pd.Series([0]))
+        schema = build_feature_schema(X)
+        predictor = ChurnPredictor(model=model, schema=schema)
+
+        def _raise(self, X):
+            raise RuntimeError("SHAP explainer blew up")
+
+        monkeypatch.setattr(ChurnPredictor, "predict_with_shap", _raise)
+
+        form_values = {name: _feature_value(name) for name in FEATURE_COLUMNS}
+        request = build_prediction_request(form_values, None)
+
+        result = explain_single_customer(predictor, request)
+
+        assert result is None
 
 
 class TestBuildPredictionRequest:

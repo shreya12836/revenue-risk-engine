@@ -31,7 +31,7 @@ st.set_page_config(
     layout="wide",
 )
 
-artifacts_dir_str = render_sidebar_and_guard()
+render_sidebar_and_guard()
 
 st.title("Revenue Risk Engine")
 st.markdown(
@@ -52,4 +52,7 @@ training artifacts or a live call to the same `ChurnPredictor` the API uses
 """
 )
 
-st.caption(f"Currently serving model artifacts from `{artifacts_dir_str}`.")
+st.caption(
+    "See the sidebar's Artifact Information panel for the active model "
+    "version, training date, and snapshot date."
+)

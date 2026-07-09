@@ -7,13 +7,13 @@ renders one from those counts rather than recomputing anything.
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
-from matplotlib.figure import Figure
+import plotly.graph_objects as go
+
+from components.theme import apply_theme
 
 
-def confusion_matrix_figure(counts: dict[str, int]) -> Figure:
+def confusion_matrix_figure(counts: dict[str, int]) -> go.Figure:
     """Build a labeled 2x2 heatmap figure from ``{tn, fp, fn, tp}`` counts."""
     matrix = np.array(
         [
@@ -21,19 +21,25 @@ def confusion_matrix_figure(counts: dict[str, int]) -> Figure:
             [counts["fn"], counts["tp"]],
         ]
     )
-    fig, ax = plt.subplots(figsize=(4, 3.5))
-    sns.heatmap(
-        matrix,
-        annot=True,
-        fmt="d",
-        cmap="Blues",
-        cbar=False,
-        xticklabels=["No churn", "Churn"],
-        yticklabels=["No churn", "Churn"],
-        ax=ax,
+    labels = ["No churn", "Churn"]
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=matrix,
+            x=labels,
+            y=labels,
+            colorscale="Blues",
+            showscale=False,
+            text=matrix,
+            texttemplate="%{text:,d}",
+            textfont={"size": 16},
+            hovertemplate="Actual: %{y}<br>Predicted: %{x}<br>count: %{z:,d}<extra></extra>",
+        )
     )
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("Actual")
-    ax.set_title("Confusion matrix (tuned XGBoost)")
-    fig.tight_layout()
-    return fig
+    fig.update_layout(
+        title="Confusion matrix (tuned XGBoost)",
+        xaxis_title="Predicted",
+        yaxis_title="Actual",
+        yaxis={"autorange": "reversed"},
+    )
+    return apply_theme(fig)
