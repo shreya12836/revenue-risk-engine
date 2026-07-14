@@ -4,23 +4,28 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![XGBoost](https://img.shields.io/badge/model-XGBoost-orange)
 ![FastAPI](https://img.shields.io/badge/api-FastAPI-009688)
-[![Live Dashboard](https://img.shields.io/badge/dashboard-live%20demo-FF4B4B?logo=streamlit&logoColor=white)](https://revenue-risk-engine.streamlit.app/)
+[![Live Risk Explorer](https://img.shields.io/badge/dashboard-live%20demo-FF4B4B?logo=streamlit&logoColor=white)](https://revenue-risk-engine.streamlit.app/)
 
 Most retailers find out a customer has churned only after the revenue is already gone. Revenue Risk Engine scores every customer's 90-day churn probability from their transaction history, converts that probability into a **£ revenue-at-risk figure**, and explains each score with SHAP — so a retention team knows who to act on, how much is at stake, and why. On the held-out test set, the model surfaces **£239,829 in revenue at risk**, at a lift of 1.48x over random targeting in the highest-risk decile.
 
-**[Try the live dashboard →](https://revenue-risk-engine.streamlit.app/)**
+**[Try the Risk Explorer →](https://revenue-risk-engine.streamlit.app/)**
 
 ## Overview
 
-Built on the UCI Online Retail II dataset, Revenue Risk Engine turns raw transaction logs into a decision a retention team can act on same-day. A tuned XGBoost classifier predicts churn probability per customer; that probability is combined with trailing spend to produce a revenue-at-risk ranking, and every prediction ships with a SHAP explanation in place of a black-box score. The system is built the way a production ML service is built, not the way a notebook is written: leakage-safe features, time-aware validation, a single schema-validated inference path shared by training, the API, and the dashboard, and 193 tests enforcing all of it in CI.
+- Built on the UCI Online Retail II dataset, turning raw transaction logs into a decision a retention team can act on same-day.
+- A tuned XGBoost classifier predicts churn probability per customer.
+- That probability is combined with trailing spend to produce a revenue-at-risk ranking.
+- Every prediction ships with a SHAP explanation in place of a black-box score.
+- Built the way a production ML service is built, not the way a notebook is written: leakage-safe features, time-aware validation, and a single schema-validated inference path shared by training, the API, and the Risk Explorer.
+- All of it enforced by an automated test suite in CI (see [Engineering highlights](#engineering-highlights)).
 
 ## Key features
 
 - **Churn scoring** — 90-day churn probability per customer from RFM, rolling-window, and trend features.
 - **Revenue-at-risk ranking** — churn probability weighted by trailing spend, so triage is prioritized by £ impact, not raw classification confidence.
 - **Per-prediction explainability** — every score comes with a SHAP breakdown of which features drove it, in business language.
-- **Schema-validated inference API** — FastAPI service with single and batch endpoints, backed by the same model the dashboard and training pipeline use.
-- **Interactive dashboard** — a live, three-page Streamlit app for model performance, portfolio triage, and single-customer explanations.
+- **Schema-validated inference API** — FastAPI service with single and batch endpoints, backed by the same model the Risk Explorer and training pipeline use.
+- **Risk Explorer** — a live, three-page Streamlit application for model performance, portfolio triage, and single-customer explanations, not just a static dashboard.
 
 ## Workflow
 
@@ -33,14 +38,17 @@ flowchart TD
     E --> F["outputs/&lt;timestamp&gt;/\nmodel, schema, metrics, SHAP figures"]
     F --> G["models.predict.ChurnPredictor\nshared inference entry point"]
     G --> H["src/api\nFastAPI: /predict, /predict/batch, /health"]
-    G --> I["dashboard\nStreamlit: live-scored, live-explained"]
+    G --> I["Risk Explorer\nStreamlit: live-scored, live-explained"]
 ```
 
-Every consumer of the trained model — the training pipeline's SHAP step, the API, and the dashboard — scores through the same `ChurnPredictor`, so column validation and ordering exist in exactly one place in the codebase.
+- Every consumer of the trained model — the training pipeline's SHAP step, the API, and the Risk Explorer — scores through the same `ChurnPredictor`.
+- Column validation and ordering exist in exactly one place in the codebase.
 
-## Live application
+## Risk Explorer
 
-**[Open the dashboard →](https://revenue-risk-engine.streamlit.app/)** — three pages, all computed at runtime against the same trained artifacts and inference module the API uses (live-scored held-out test set, live SHAP, no static images):
+The Risk Explorer is a full three-page application, not a static dashboard — every page is computed at runtime against the same trained artifacts and inference module the API uses (live-scored held-out test set, live SHAP, no static images).
+
+**[Open the Risk Explorer →](https://revenue-risk-engine.streamlit.app/)**
 
 | Page | What you can do |
 | --- | --- |
@@ -52,9 +60,20 @@ Run it locally with `make run-dashboard` (Streamlit at `http://localhost:8501`).
 
 ## Methodology
 
-The feature layer is leakage-safe by construction: every feature function raises if it receives a transaction dated after its snapshot, and a dedicated `TestLeakageIsImpossible` test verifies snapshot-date alignment end to end. Labels are guarded the same way — `assert_sufficient_future_window` raises rather than silently mislabeling a customer as churned when a snapshot sits too close to the end of the available data.
+**Leakage-safe features:**
 
-Two models are trained and compared on identical, time-aware splits: a logistic-regression baseline (median imputation + scaling, SMOTE applied to the training fold only) and XGBoost (raw features, `NaN` handled natively, `scale_pos_weight` for imbalance). XGBoost is then tuned with Optuna — 50 trials, 5-fold `TimeSeriesSplit` CV, optimizing **PR-AUC** rather than ROC-AUC, since ROC-AUC is optimistic under class imbalance in a way that misrepresents performance on the minority (churned) class. SMOTE runs inside each CV fold through an `imblearn` pipeline, so no synthetic sample derived from a validation fold's real customers can influence what the model is scored on.
+- Every feature function raises if it receives a transaction dated after its snapshot.
+- A dedicated `TestLeakageIsImpossible` test verifies snapshot-date alignment end to end.
+- Labels are guarded the same way — `assert_sufficient_future_window` raises rather than silently mislabeling a customer as churned when a snapshot sits too close to the end of the available data.
+
+**Modeling:**
+
+- Two models are trained and compared on identical, time-aware splits.
+- Logistic-regression baseline: median imputation + scaling, SMOTE applied to the training fold only.
+- XGBoost: raw features, `NaN` handled natively, `scale_pos_weight` for imbalance.
+- XGBoost is tuned with Optuna — 50 trials, 5-fold `TimeSeriesSplit` CV, optimizing **PR-AUC** rather than ROC-AUC, since ROC-AUC is optimistic under class imbalance in a way that misrepresents performance on the minority (churned) class.
+- SMOTE runs inside each CV fold through an `imblearn` pipeline, so no synthetic sample derived from a validation fold's real customers can influence what the model is scored on.
+- The final model is explained with `shap.TreeExplainer` on the tuned XGBoost model — it's the model that ships, so it's the one worth explaining.
 
 **Verified on the real dataset** (Online Retail II, both sheets, 1,067,371 rows):
 
@@ -63,8 +82,6 @@ Two models are trained and compared on identical, time-aware splits: a logistic-
 | Train | 2010-06-01 | 2,577 | 33 | 51.3% |
 | Val | 2010-12-01 | 4,096 | 33 | 67.4% |
 | Test | 2011-09-01 | 5,053 | 33 | 57.5% |
-
-The final model is explained with `shap.TreeExplainer` on the tuned XGBoost model — it's the model that ships, so it's the one worth explaining.
 
 ## Results
 
@@ -81,9 +98,17 @@ Tuned XGBoost, scored on the held-out test snapshot (2011-09-01), untouched by C
 | Lift @ top 10% | **1.58x** | 1.45x | 1.48x |
 | Revenue at risk identified | £85,639 | £164,034 | **£239,829** |
 
-Stated up front, not buried: the logistic-regression baseline still edges out tuned XGBoost on PR-AUC (0.810 vs 0.799). Tuning closed most of the gap and improved calibration substantially (Brier 0.204 → 0.184), but with ~2,600 training rows, more data is likely a bigger lever than further tuning — see [Limitations](#limitations).
+**Stated up front, not buried:**
 
-The top three features by mean absolute SHAP value are `days_between_txns`, `recency_days`, and `first_purchase_days` — all measures of purchase *cadence and tenure*, not raw spend. A high-spend customer who suddenly stops ordering is flagged as high-risk well before a lower-spend-but-consistent one, which argues for cadence-based retention triggers over pure spend-tier segmentation.
+- The logistic-regression baseline still edges out tuned XGBoost on PR-AUC (0.810 vs 0.799).
+- Tuning closed most of the gap and improved calibration substantially (Brier 0.204 → 0.184).
+- With ~2,600 training rows, more data is likely a bigger lever than further tuning — see [Limitations](#limitations).
+
+**Top SHAP drivers:**
+
+- The top three features by mean absolute SHAP value are `days_between_txns`, `recency_days`, and `first_purchase_days` — all measures of purchase *cadence and tenure*, not raw spend.
+- A high-spend customer who suddenly stops ordering is flagged as high-risk well before a lower-spend-but-consistent one.
+- This argues for cadence-based retention triggers over pure spend-tier segmentation.
 
 ![SHAP summary plot](docs/images/shap_summary.png)
 *Global feature importance: each dot is one customer, color is feature value (red = high). `days_between_txns` and `recency_days` dominate.*
@@ -92,7 +117,7 @@ The top three features by mean absolute SHAP value are `days_between_txns`, `rec
 
 - **Leakage-proof by construction** — snapshot-date validation is enforced in every feature function, not just tested after the fact.
 - **Fold-safe imbalance handling** — SMOTE runs inside each `TimeSeriesSplit` fold via an `imblearn` pipeline; the imputer and scaler are fit on the training split only and never refit downstream.
-- **One inference path, three consumers** — training's SHAP step, the FastAPI service, and the dashboard all score through the same `ChurnPredictor`, so scoring logic can't drift between callers.
+- **One inference path, three consumers** — training's SHAP step, the FastAPI service, and the Risk Explorer all score through the same `ChurnPredictor`, so scoring logic can't drift between callers.
 - **Fail-fast API startup** — the model loads eagerly in FastAPI's `lifespan` hook, so a missing or broken artifacts directory crashes at boot instead of on the first request.
 - **Layered error handling** — Pydantic validation errors return 422, a defense-in-depth `ValueError` check returns 400, and unexpected exceptions return a generic 500 without leaking internals; request logs capture method/path/status/latency but never payload bodies.
 - **Self-verifying reproducibility** — the training pipeline ends by reloading its own just-saved `model_v1.joblib` + `feature_schema.json` through `ChurnPredictor.from_artifacts` and asserting the reloaded predictions match the in-memory ones, so a broken save/load round trip fails the pipeline run itself.
@@ -102,7 +127,7 @@ The top three features by mean absolute SHAP value are `days_between_txns`, `rec
 
 ```text
 configs/              Pydantic-validated YAML configuration
-dashboard/            Streamlit app (pages, services, components) — live demo above
+dashboard/            Risk Explorer Streamlit application (pages, services, components) — live demo above
 docs/                 Diagnostic images and architecture notes
 outputs/<timestamp>/  Versioned training artifacts (model, metrics, SHAP figures) — gitignored
 scripts/              Pipeline entry point (train.py) and smoke tests
@@ -132,7 +157,9 @@ curl -X POST http://localhost:8000/predict \
 # {"customer_id": "CUST-001", "churn_probability": 0.37}
 ```
 
-The full 33-field request schema (21 required, 12 nullable) is documented interactively at `/docs`; malformed input — an unknown field, wrong type, out-of-range value, or an oversized batch — returns a `422` with a field-level error before it reaches the model. Run `make test` for the full suite and `make lint` for flake8 + mypy.
+- The full 33-field request schema (21 required, 12 nullable) is documented interactively at `/docs`.
+- Malformed input — an unknown field, wrong type, out-of-range value, or an oversized batch — returns a `422` with a field-level error before it reaches the model.
+- Run `make test` for the full suite and `make lint` for flake8 + mypy.
 
 ## Dataset
 
@@ -155,7 +182,7 @@ The full 33-field request schema (21 required, 12 nullable) is documented intera
 What separates this from a typical churn-prediction tutorial repo:
 
 - **Reports the unfavorable result, not just the flattering one** — the baseline beating the tuned model on PR-AUC is stated up front with the reason, not buried or omitted.
-- **Ships a live, public demo**, not just setup instructions — the dashboard is deployed and interactive, so the work can be evaluated without cloning the repo.
+- **Ships a live, public application**, not just setup instructions — the Risk Explorer is deployed and interactive, so the work can be evaluated without cloning the repo.
 - **Stops at business decisions, not model metrics** — the deliverable is a ranked, £-denominated retention list a non-technical stakeholder can act on, not a notebook ending at a confusion matrix.
 
 ## Limitations
@@ -163,7 +190,7 @@ What separates this from a typical churn-prediction tutorial repo:
 - **Small training set (~2,600 rows).** Tuning improved PR-AUC from 0.758 to 0.799, but the logistic-regression baseline still edges out tuned XGBoost (0.810). More data — not more tuning — is the likelier next lever.
 - **Seasonality skews the validation split.** Val-snapshot churn (67.4%) sits well above train (51.3%) or test (57.5%) — the val snapshot (2010-12-01) looks 90 days forward across the December holiday lull, which likely inflates apparent churn for that split specifically. Weight the test-split numbers over the val-split numbers when judging the model.
 - **Revenue-at-risk is a proxy, not a CLV model.** It's `churn_probability × trailing 90-day spend`, not the output of a trained customer-lifetime-value model — CLV regression is explicitly deferred (`models.train.run_training` raises `NotImplementedError` for `target="clv"`).
-- **The API has no public deployment yet.** It runs locally (`make run-api`) or in CI. The dashboard, by contrast, is deployed and public.
+- **The API has no public deployment yet.** It runs locally (`make run-api`) or in CI. The Risk Explorer, by contrast, is deployed and public.
 
 ## License
 
